@@ -76,7 +76,7 @@ from obd2.obd2 import OBD
 def test_my_feature(mock_serial):
     """Test description"""
     # Use mock_serial fixture for hardware-free testing
-    connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+    connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
     assert connection.is_connected()
 ```
 

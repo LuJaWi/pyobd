@@ -118,7 +118,7 @@ No OBD adapter required! All tests use mocks:
 @patch('serial.Serial')
 def test_connection(mock_serial):
     # Creates mock ELM327 adapter
-    connection = OBD(portstr='/dev/ttyUSB0')
+    connection = OBDConnection(portstr='/dev/ttyUSB0')
 ```
 
 ### 🏷️ Test Markers
