@@ -109,73 +109,136 @@ class ELM327:
                  check_voltage: bool = False, 
                  start_low_power: bool = False
                  ) -> None:
-        """Initializes port by resetting device and gettings supported PIDs. """
+        """Initializes port by resetting device and getting supported PIDs."""
         log_msg = f"Initializing ELM327: PORT={portname} BAUD={baudrate} PROTOCOL={protocol}"
         logger.info(log_msg)
         print(log_msg)
+        
+        # Save connection parameters for reconnection
+        self.__portname = portname
+        self.__baudrate = baudrate
+        self.__protocol_id = protocol
+        self.__check_voltage = check_voltage
+        self.__start_low_power = start_low_power
+        
+        # Initialize instance variables
         self.__status = OBDStatus.NOT_CONNECTED
         self.__protocol = UnknownProtocol([])
-        self.__low_power = False
-        self.timeout = timeout
+        self.__low_power_mode = False
+        self.__timeout = timeout
+        self.__port = None
+        
+        # Perform initial connection
+        self._connect(portname, baudrate, protocol, check_voltage, start_low_power)
 
-        self.__port: serial.Serial = self.__open_serial_port(portname, timeout=timeout)
+    def _connect(self, portname: str, baudrate: int, protocol: str, 
+                 check_voltage: bool = False, start_low_power: bool = False) -> bool:
+        """
+        Internal method to establish connection to ELM327 device.
+        
+        This performs the full connection sequence:
+        1. Open serial port
+        2. Wake from low power (if needed)
+        3. Set baudrate
+        4. Reset device (ATZ)
+        5. Configure settings (ATE0, ATH1, ATL0)
+        6. Check voltage (optional)
+        7. Set protocol
+        
+        Args:
+            portname: Serial port path
+            baudrate: Communication baudrate
+            protocol: OBD protocol to use (None for auto-detect)
+            check_voltage: Whether to verify vehicle voltage
+            start_low_power: Whether device starts in low power mode
+            
+        Returns:
+            True if connection successful, False otherwise
+        """
+        # Reset status
+        self.__status = OBDStatus.NOT_CONNECTED
+        
+        # Open serial port
+        self.__port = self.__open_serial_port(portname, timeout=self.__timeout)
+        if self.__port is None:
+            self.__status = OBDStatus.NOT_CONNECTED
+            return False
 
-        if start_low_power: # Wake from low power
+        # Wake from low power if needed
+        if start_low_power:
             self.__wake_from_low_power()
 
-        if not self.set_baudrate(baudrate): # Find and set baudrate
-            self.__error("Failed to set baudrate")
-            return
-        else:
-            print(f"Baudrate set to {baudrate}")
+        # Set baudrate
+        if not self.set_baudrate(baudrate):
+            logger.error("Failed to set baudrate")
+            print("Failed to set baudrate")
+            self.__cleanup_failed_connection()
+            return False
+        print(f"Baudrate set to {baudrate}")
 
-        if not self.__reset_device(): # ATZ (reset)
-            return
+        # Reset device (ATZ)
+        if not self.__reset_device():
+            self.__cleanup_failed_connection()
+            return False
 
-        if not self.__disable_echo(): # ATE0 (echo OFF)
-            return
+        # Configure ELM327 settings
+        if not self.__disable_echo():  # ATE0 (echo OFF)
+            self.__cleanup_failed_connection()
+            return False
 
-        if not self.__enable_headers(): # ATH1 (headers ON)
-            return
+        if not self.__enable_headers():  # ATH1 (headers ON)
+            self.__cleanup_failed_connection()
+            return False
 
-        if not self.__disable_linefeeds(): # ATL0 (linefeeds OFF)
-            return
+        if not self.__disable_linefeeds():  # ATL0 (linefeeds OFF)
+            self.__cleanup_failed_connection()
+            return False
 
-        # by now, we've successfuly communicated with the ELM, but not the car
-        # Update status
+        # Successfully communicated with ELM
         self.__status = OBDStatus.ELM_CONNECTED
         print('Connected to the ELM327')
-        # -------------------------- AT RV (read volt) ------------------------
+        
+        # Check voltage if requested
         if check_voltage:
             if not self.__is_vehicle_voltage_correct():
-                return
-            # by now, we've successfuly connected to the OBD socket
+                # Keep ELM_CONNECTED status - we can talk to adapter
+                logger.warning("Voltage check failed, but ELM is connected")
+                return False
             self.__status = OBDStatus.OBD_CONNECTED
             print('OBD Connected')
         
-        # try to communicate with the car, and load the correct protocol parser
+        # Try to communicate with the car
         if not self.set_protocol(protocol):
-            err_msg = "Failed to set protocol during initialization. "
+            err_msg = "Failed to set protocol. "
             err_msg += "Adapter is connected, but failed to connect to the vehicle, ignition may be off."
             logger.error(err_msg)
             print(err_msg)
-            return
-        else:
-            self.__status = OBDStatus.CAR_CONNECTED
-            log_msg = f"Connected Successfully: PORT={portname} BAUD={self.__port.baudrate} PROTOCOL={self.__protocol.ELM_ID}"
-            logger.info(log_msg)
-            print(log_msg)
+            # Keep ELM_CONNECTED status - adapter works, just can't reach vehicle
+            return False
+        
+        # Success!
+        self.__status = OBDStatus.CAR_CONNECTED
+        log_msg = f"Connected Successfully: PORT={portname} BAUD={self.__port.baudrate} PROTOCOL={self.__protocol.ELM_ID}"
+        logger.info(log_msg)
+        print(log_msg)
+        return True
 
-        if self.__status == OBDStatus.OBD_CONNECTED:
-            logger.error("Adapter connected, but the ignition is off")
-            print("Adapter connected, but the ignition is off")
-        else:
-            logger.error("Connected to the adapter, "
-                            "but failed to connect to the vehicle")
-            print("Connected to the adapter, "
-                            "but failed to connect to the vehicle")
+    def is_connected(self) -> bool:
+        """ Check if the port is still valid and open """
+        if self.__port is None or self.__status == OBDStatus.NOT_CONNECTED:
+            return False
+        try:
+            return self.__port.is_open
+        except serial.SerialException:
+            logging.error("Serial exception when checking port status")
+            return False
 
     def set_protocol(self, protocol_) -> bool:
+        if not self.is_connected():
+            err_msg = "Cannot set_protocol() when unconnected"
+            logger.error(err_msg)
+            print(err_msg)
+            return False
         if protocol_ is not None:
             # an explicit protocol was specified
             if protocol_ not in self._SUPPORTED_PROTOCOLS:
@@ -272,7 +335,7 @@ class ELM327:
 
         if baud_rate is None:
             # when connecting to pseudo terminal, don't bother with auto baud
-            if self.port_name().startswith("/dev/pts"):
+            if self.port_name.startswith("/dev/pts"):
                 logger.debug("Detected pseudo terminal, skipping baudrate setup")
                 print("Detected pseudo terminal, skipping baudrate setup")
                 self.__port.baudrate = psuedo_baud_rate
@@ -392,31 +455,79 @@ class ELM327:
                 return True
         return False
 
+    def __cleanup_failed_connection(self):
+        """
+        Clean up after a failed connection attempt.
+        Sets status to NOT_CONNECTED and closes the port.
+        """
+        self.__status = OBDStatus.NOT_CONNECTED
+        if self.__port is not None:
+            try:
+                self.__port.close()
+            except Exception as e:
+                logger.debug(f"Exception while closing port during cleanup: {e}")
+            self.__port = None
+
     def __error(self, msg):
-        """ handles fatal failures, print logger.info info and closes serial """
-        self.close()
+        """ handles fatal failures, logs error info and closes serial """
         logger.error(str(msg))
         print(str(msg))
+        self.__cleanup_failed_connection()
+    
+    @property
+    def timeout(self):
+        """Get the current timeout value."""
+        return self.__timeout
+    
+    @timeout.setter
+    def timeout(self, value):
+        """Set the timeout value. Also updates the port timeout if connected."""
+        if value <= 0:
+            raise ValueError("Timeout must be positive")
+        self.__timeout = value
+        if self.__port is not None:
+            self.__port.timeout = value
+            self.__port.write_timeout = value
+    
+    @property
     def port_name(self):
+        """Get the name/path of the serial port."""
         if self.__port is not None:
             return self.__port.portstr
         else:
             return ""
 
+    @property
     def status(self):
+        """Get the current connection status."""
         return self.__status
 
+    @property
     def baudrate(self):
-        return self.__port.baudrate
+        """Get the current baudrate."""
+        if self.__port is not None:
+            return self.__port.baudrate
+        return None
 
+    @property
     def ecus(self):
+        """Get the list of ECUs detected."""
         return self.__protocol.ecu_map.values()
 
+    @property
     def protocol_name(self):
+        """Get the name of the current protocol."""
         return self.__protocol.ELM_NAME
 
+    @property
     def protocol_id(self):
+        """Get the ID of the current protocol."""
         return self.__protocol.ELM_ID
+    
+    @property
+    def is_low_power_mode(self):
+        """Check if the device is in low power mode."""
+        return self.__low_power_mode
 
     def low_power(self):
         """
@@ -433,10 +544,11 @@ class ELM327:
             Returns the status from the ELM327, 'OK' means low power mode
             is going to become active.
         """
-
-        if self.__status == OBDStatus.NOT_CONNECTED:
-            logger.info("cannot enter low power when unconnected")
-            print("cannot enter low power when unconnected")
+        
+        if not self.is_connected():
+            err_msg = "Cannot enter low power when unconnected"
+            logger.info(err_msg)
+            print(err_msg)
             return None
 
         lines = self.__send(b"ATLP", delay=1, end_marker=self.ELM_LP_ACTIVE)
@@ -444,7 +556,7 @@ class ELM327:
         if 'OK' in lines:
             logger.debug("Successfully entered low power mode")
             print("Successfully entered low power mode")
-            self.__low_power = True
+            self.__low_power_mode = True
         else:
             logger.debug("Failed to enter low power mode")
             print("Failed to enter low power mode")
@@ -465,9 +577,11 @@ class ELM327:
 
             Returns the status from the ELM327.
         """
-        if self.__status == OBDStatus.NOT_CONNECTED:
-            logger.info("cannot exit low power when unconnected")
-            print("cannot exit low power when unconnected")
+        
+        if not self.is_connected():
+            err_msg = "Cannot exit low power when unconnected"
+            logger.info(err_msg)
+            print(err_msg)
             return None
 
         lines = self.__send(b" ")
@@ -475,7 +589,7 @@ class ELM327:
         # Assume we woke up
         logger.debug("Successfully exited low power mode")
         print("Successfully exited low power mode")
-        self.__low_power = False
+        self.__low_power_mode = False
 
         return lines
 
@@ -484,10 +598,6 @@ class ELM327:
             Resets the device, and sets all
             attributes to unconnected states.
         """
-
-        self.__status = OBDStatus.NOT_CONNECTED
-        self.__protocol = None
-
         if self.__port is not None:
             logger.info("closing port")
             print("closing port")
@@ -498,9 +608,118 @@ class ELM327:
                 pass
             try:
                 self.__port.close()
-                self.__port = None
             except:
-                print("Port already closed.")
+                logger.debug("Exception while closing port")
+            finally:
+                self.__port = None
+        
+        self.__status = OBDStatus.NOT_CONNECTED
+        self.__protocol = None
+
+    def reconnect(self, max_attempts: int = 3, retry_delay: float = 1.0) -> bool:
+        """
+        Attempt to reconnect to the ELM327 device.
+        
+        This method tries to re-establish connection after a disconnect by:
+        1. Closing any existing connection
+        2. Reopening the serial port
+        3. Re-running the initialization sequence
+        
+        Args:
+            max_attempts: Maximum number of reconnection attempts (default: 3)
+            retry_delay: Delay in seconds between attempts (default: 1.0)
+            
+        Returns:
+            True if reconnection successful, False otherwise
+        """
+        logger.info(f"Attempting to reconnect (max {max_attempts} attempts)...")
+        print(f"Attempting to reconnect (max {max_attempts} attempts)...")
+        
+        # Use saved connection parameters
+        portname = self.__portname
+        baudrate = self.__baudrate
+        protocol = self.__protocol_id
+        check_voltage = self.__check_voltage
+        start_low_power = self.__start_low_power
+        
+        # If we don't have the original parameters, can't reconnect
+        if not portname:
+            logger.error("Cannot reconnect: original port name not available")
+            print("Cannot reconnect: original port name not available")
+            return False
+        
+        for attempt in range(1, max_attempts + 1):
+            logger.info(f"Reconnection attempt {attempt}/{max_attempts}")
+            print(f"Reconnection attempt {attempt}/{max_attempts}")
+            
+            try:
+                # Close existing connection cleanly
+                self.close()
+                
+                # Wait before retry (except first attempt)
+                if attempt > 1:
+                    time.sleep(retry_delay)
+                
+                # Use the _connect() method to re-establish connection
+                if self._connect(portname, baudrate, protocol, check_voltage, start_low_power):
+                    logger.info(f"Reconnection successful on attempt {attempt}")
+                    print(f"Reconnection successful on attempt {attempt}")
+                    return True
+                else:
+                    logger.warning(f"Attempt {attempt}: Connection failed")
+                    print(f"Attempt {attempt}: Connection failed")
+                    
+            except Exception as e:
+                logger.warning(f"Attempt {attempt}: Exception during reconnect: {e}")
+                print(f"Attempt {attempt}: Exception during reconnect: {e}")
+                continue
+        
+        # All attempts failed
+        logger.error(f"Reconnection failed after {max_attempts} attempts")
+        print(f"Reconnection failed after {max_attempts} attempts")
+        self.__cleanup_failed_connection()
+        return False
+
+    # def send_and_parse_with_reconnect(self, cmd, auto_reconnect: bool = True, max_reconnect_attempts: int = 1):
+    #     """
+    #     Send command with automatic reconnection on failure.
+        
+    #     This is a wrapper around send_and_parse() that will automatically
+    #     attempt to reconnect if the connection is lost.
+        
+    #     Args:
+    #         cmd: Command to send
+    #         auto_reconnect: Whether to attempt reconnection on failure (default: True)
+    #         max_reconnect_attempts: Number of reconnection attempts (default: 1)
+            
+    #     Returns:
+    #         List of Message objects on success, None on failure
+    #     """
+    #     # Try normal send first
+    #     result = self.send_and_parse(cmd)
+        
+    #     # If it worked, return the result
+    #     if result is not None:
+    #         return result
+        
+    #     # If auto-reconnect is disabled, give up
+    #     if not auto_reconnect:
+    #         return None
+        
+    #     # Connection lost - try to reconnect
+    #     logger.info("Connection lost during send, attempting reconnect...")
+    #     print("Connection lost during send, attempting reconnect...")
+        
+    #     if self.reconnect(max_attempts=max_reconnect_attempts):
+    #         # Reconnection successful, retry the command
+    #         logger.info("Reconnected successfully, retrying command...")
+    #         print("Reconnected successfully, retrying command...")
+    #         return self.send_and_parse(cmd)
+    #     else:
+    #         # Reconnection failed
+    #         logger.error("Reconnection failed, cannot send command")
+    #         print("Reconnection failed, cannot send command")
+    #         return None
 
     def send_and_parse(self, cmd):
         """
@@ -513,14 +732,14 @@ class ELM327:
 
             Returns a list of Message objects
         """
-
-        if self.__status == OBDStatus.NOT_CONNECTED:
-            logger.info("cannot send_and_parse() when unconnected")
-            print("cannot send_and_parse() when unconnected")
+        if not self.is_connected():
+            err_msg = "Cannot send_and_parse() when unconnected"
+            logger.error(err_msg)
+            print(err_msg)
             return None
 
         # Check if we are in low power
-        if self.__low_power == True:
+        if self.__low_power_mode == True:
             self.normal_power()
 
         lines = self.__send(cmd)
@@ -568,12 +787,10 @@ class ELM327:
                 self.__port.flushInput()  # dump everything in the input buffer
                 self.__port.write(cmd)  # turn the string into bytes and write
                 self.__port.flush()  # wait for the output buffer to finish transmitting
-            except Exception:
-                self.__status = OBDStatus.NOT_CONNECTED
-                self.__port.close()
-                self.__port = None
-                logger.critical("Device disconnected while writing")
-                print("Device disconnected while writing")
+            except Exception as e:
+                logger.critical(f"Device disconnected while writing: {e}")
+                print(f"Device disconnected while writing: {e}")
+                self.__cleanup_failed_connection()
                 return
         else:
             logger.info("cannot perform __write() when unconnected")
@@ -598,21 +815,17 @@ class ELM327:
             # retrieve as much data as possible
             try:
                 data = self.__port.read(self.__port.in_waiting or 1)
-            except Exception:
-                self.__status = OBDStatus.NOT_CONNECTED
-                self.__port.close()
-                self.__port = None
-                logger.critical("Device disconnected while reading")
-                print("Device disconnected while reading")
+            except Exception as e:
+                logger.critical(f"Device disconnected while reading: {e}")
+                print(f"Device disconnected while reading: {e}")
+                self.__cleanup_failed_connection()
                 return []
 
             # if nothing was received
             if not data:
                 logger.warning("Failed to read port")
                 print("Failed to read port")
-                self.__status = OBDStatus.NOT_CONNECTED
-                self.__port.close()
-                self.__port = None
+                self.__cleanup_failed_connection()
                 break
 
             buffer.extend(data)
@@ -659,12 +872,12 @@ class ELM327:
             port.write_timeout = timeout
             return port
         except serial.SerialException as e:
-            self.__error(e)
-            print(e)
+            logger.error(f"Failed to open serial port: {e}")
+            print(f"Failed to open serial port: {e}")
             return None
         except OSError as e:
-            self.__error(e)
-            print(e)
+            logger.error(f"OS error opening serial port: {e}")
+            print(f"OS error opening serial port: {e}")
             return None
         
     def __wake_from_low_power(self):

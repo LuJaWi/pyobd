@@ -6,7 +6,7 @@ Tests connection initialization, querying, and status management with mocks.
 
 import pytest
 from unittest.mock import patch
-from obd2.obd2 import OBD
+from obd2.obd2 import OBDConnection
 from obd2.utils.obd_status import OBDStatus
 
 
@@ -16,20 +16,20 @@ class TestOBDConnection:
     
     @patch('elm327.elm327.serial.serial_for_url')
     def test_connection_with_explicit_port_new(self, mock_serial_for_url, mock_serial):
-        """Test OBD connection with explicit port"""
+        """Test OBDConnection connection with explicit port"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         
         assert connection is not None
         assert hasattr(connection, 'interface')
     
     @patch('elm327.elm327.serial.serial_for_url')
     def test_connection_close_new(self, mock_serial_for_url, mock_serial):
-        """Test closing OBD connection"""
+        """Test closing OBDConnection connection"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         connection.close()
         
         assert connection.interface is None
@@ -44,7 +44,7 @@ class TestOBDStatus:
         """Test status() method"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         status = connection.status()
         
         assert isinstance(status, OBDStatus)
@@ -54,7 +54,7 @@ class TestOBDStatus:
         """Test is_connected() method"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         
         assert hasattr(connection, 'is_connected')
         assert callable(connection.is_connected)
@@ -69,7 +69,7 @@ class TestOBDProperties:
         """Test port_name property"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         
         assert hasattr(connection, 'port_name')
     
@@ -78,7 +78,7 @@ class TestOBDProperties:
         """Test protocol_name property"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         
         assert hasattr(connection, 'protocol_name')
     
@@ -87,7 +87,7 @@ class TestOBDProperties:
         """Test protocol_id property"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         
         assert hasattr(connection, 'protocol_id')
 
@@ -103,7 +103,7 @@ class TestOBDCommands:
         
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         commands = Commands()
         
         assert hasattr(connection, 'supports')
@@ -114,7 +114,7 @@ class TestOBDCommands:
         """Test print_commands() method"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         
         assert hasattr(connection, 'print_commands')
 
@@ -128,7 +128,7 @@ class TestOBDPowerModes:
         """Test setting low power mode"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         # Just check the connection was created successfully
         assert connection is not None
     
@@ -137,7 +137,7 @@ class TestOBDPowerModes:
         """Test setting normal power mode"""
         mock_serial_for_url.return_value = mock_serial
         
-        connection = OBD(portstr='/dev/ttyUSB0', fast=False)
+        connection = OBDConnection(portstr='/dev/ttyUSB0', fast=False)
         # Just check the connection was created successfully
         assert connection is not None
 

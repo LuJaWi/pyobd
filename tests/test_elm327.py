@@ -37,7 +37,7 @@ class TestELM327Initialization:
         
         elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
         
-        assert elm.status() == OBDStatus.CAR_CONNECTED
+        assert elm.status == OBDStatus.CAR_CONNECTED
         assert mock_port.write.call_count >= 4  # At least ATZ, ATE0, ATH1, ATL0
         
     def test_init_baudrate_failure(self, mock_serial_class):
@@ -48,7 +48,7 @@ class TestELM327Initialization:
         # Make set_baudrate fail
         with patch.object(ELM327, 'set_baudrate', return_value=False):
             elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
-            assert elm.status() == OBDStatus.NOT_CONNECTED
+            assert elm.status == OBDStatus.NOT_CONNECTED
     
     def test_init_atz_no_elm_response(self, mock_serial_class):
         """Test initialization fails when ATZ doesn't get ELM response"""
@@ -56,7 +56,7 @@ class TestELM327Initialization:
         mock_port.read.return_value = b'JUNK DATA>'
         
         elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
-        assert elm.status() == OBDStatus.NOT_CONNECTED
+        assert elm.status == OBDStatus.NOT_CONNECTED
     
     def test_init_atz_serial_exception(self, mock_serial_class):
         """Test initialization handles SerialException during ATZ"""
@@ -64,7 +64,7 @@ class TestELM327Initialization:
         mock_port.write.side_effect = serial.SerialException("Port error")
         
         elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
-        assert elm.status() == OBDStatus.NOT_CONNECTED
+        assert elm.status == OBDStatus.NOT_CONNECTED
     
     def test_init_ate0_failure(self, mock_serial_class):
         """Test initialization fails when ATE0 doesn't return OK"""
@@ -75,7 +75,7 @@ class TestELM327Initialization:
         ]
         
         elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
-        assert elm.status() == OBDStatus.NOT_CONNECTED
+        assert elm.status == OBDStatus.NOT_CONNECTED
     
     def test_init_ath1_failure(self, mock_serial_class):
         """Test initialization fails when ATH1 doesn't return OK"""
@@ -87,7 +87,7 @@ class TestELM327Initialization:
         ]
         
         elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
-        assert elm.status() == OBDStatus.NOT_CONNECTED
+        assert elm.status == OBDStatus.NOT_CONNECTED
     
     def test_init_atl0_failure(self, mock_serial_class):
         """Test initialization fails when ATL0 doesn't return OK"""
@@ -100,7 +100,7 @@ class TestELM327Initialization:
         ]
         
         elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
-        assert elm.status() == OBDStatus.NOT_CONNECTED
+        assert elm.status == OBDStatus.NOT_CONNECTED
     
     def test_init_with_voltage_check_success(self, mock_serial_class):
         """Test initialization with voltage check passes"""
@@ -123,7 +123,7 @@ class TestELM327Initialization:
             elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, 
                          timeout=10, check_voltage=True)
             
-            assert elm.status() == OBDStatus.CAR_CONNECTED
+            assert elm.status == OBDStatus.CAR_CONNECTED
     
     def test_init_with_voltage_check_low_voltage(self, mock_serial_class):
         """Test initialization fails when voltage is too low"""
@@ -140,7 +140,7 @@ class TestELM327Initialization:
             elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, 
                          timeout=10, check_voltage=True)
             
-            assert elm.status() == OBDStatus.ELM_CONNECTED
+            assert elm.status == OBDStatus.ELM_CONNECTED
     
     def test_init_with_voltage_check_no_response(self, mock_serial_class):
         """Test initialization fails when voltage check returns no data"""
@@ -157,7 +157,7 @@ class TestELM327Initialization:
             elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, 
                          timeout=10, check_voltage=True)
             
-            assert elm.status() == OBDStatus.ELM_CONNECTED
+            assert elm.status == OBDStatus.ELM_CONNECTED
     
     def test_init_with_start_low_power(self, mock_serial_class):
         """Test initialization with start_low_power flag"""
@@ -204,7 +204,7 @@ class TestELM327Initialization:
         elm = ELM327(portname='/dev/ttyUSB0', baudrate=38400, protocol=None, timeout=10)
         
         # Should stay at ELM_CONNECTED since protocol failed
-        assert elm.status() == OBDStatus.ELM_CONNECTED
+        assert elm.status == OBDStatus.ELM_CONNECTED
 
 
 class TestELM327ProtocolMethods:
@@ -390,7 +390,7 @@ class TestELM327Communication:
         """Test send_and_parse wakes device from low power"""
         elm = initialized_elm
         elm._ELM327__status = OBDStatus.CAR_CONNECTED
-        elm._ELM327__low_power = True
+        elm._ELM327__low_power_mode = True
         elm._ELM327__port.read.return_value = b'41 0C 1A F8>'
         
         messages = elm.send_and_parse(b"010C")
@@ -463,7 +463,7 @@ class TestELM327CloseAndCleanup:
         elm.close()
         
         assert mock_port.close.called
-        assert elm.status() == OBDStatus.NOT_CONNECTED
+        assert elm.status == OBDStatus.NOT_CONNECTED
     
     def test_close_handles_exceptions(self, initialized_elm):
         """Test close handles exceptions gracefully"""
@@ -472,7 +472,7 @@ class TestELM327CloseAndCleanup:
         
         # Should not raise
         elm.close()
-        assert elm.status() == OBDStatus.NOT_CONNECTED
+        assert elm.status == OBDStatus.NOT_CONNECTED
 
 
 class TestELM327Properties:
@@ -483,43 +483,43 @@ class TestELM327Properties:
         elm = initialized_elm
         elm._ELM327__port.portstr = '/dev/ttyUSB0'
         
-        assert elm.port_name() == '/dev/ttyUSB0'
+        assert elm.port_name == '/dev/ttyUSB0'
     
     def test_port_name_when_none(self, initialized_elm):
         """Test port_name when port is None"""
         elm = initialized_elm
         elm._ELM327__port = None
         
-        assert elm.port_name() == ""
+        assert elm.port_name == ""
     
     def test_status(self, initialized_elm):
         """Test status method"""
         elm = initialized_elm
         elm._ELM327__status = OBDStatus.CAR_CONNECTED
         
-        assert elm.status() == OBDStatus.CAR_CONNECTED
+        assert elm.status == OBDStatus.CAR_CONNECTED
     
     def test_baudrate(self, initialized_elm):
         """Test baudrate method"""
         elm = initialized_elm
         elm._ELM327__port.baudrate = 115200
         
-        assert elm.baudrate() == 115200
+        assert elm.baudrate == 115200
     
     def test_protocol_name(self, initialized_elm):
         """Test protocol_name method"""
         elm = initialized_elm
-        assert hasattr(elm.protocol_name(), '__len__')  # Returns a string
+        assert hasattr(elm.protocol_name, '__len__')  # Returns a string
     
     def test_protocol_id(self, initialized_elm):
         """Test protocol_id method"""
         elm = initialized_elm
-        assert hasattr(elm.protocol_id(), '__len__')  # Returns a string
+        assert hasattr(elm.protocol_id, '__len__')  # Returns a string
     
     def test_ecus(self, initialized_elm):
         """Test ecus method"""
         elm = initialized_elm
-        ecus = elm.ecus()
+        ecus = elm.ecus
         assert hasattr(ecus, '__iter__')  # Returns iterable
 
 

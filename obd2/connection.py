@@ -11,7 +11,7 @@ Handles connection initialization, retry logic, and basic OBD operations.
 import time
 import logging
 from typing import Optional, Tuple, Callable, Any
-from obd2.obd2 import OBD
+from obd2.obd2 import OBDConnection
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ class OBDConnection:
             fast: Enable fast mode (skip some initialization)
             status_callback: Optional[Callable[[str], None]] = None for status updates
         """
-        self.connection: OBD = None
+        self.connection: OBDConnection = None
         self.ELMver = "Unknown"
         self._status_callback = status_callback
         
@@ -77,7 +77,7 @@ class OBDConnection:
             
             # Attempt new connection
             try:
-                self.connection = OBD(
+                self.connection = OBDConnection(
                     portstr=portnum,
                     baudrate=baud,
                     protocol=None,
@@ -158,7 +158,7 @@ class OBDConnection:
             raise ConnectionError("Not connected to vehicle")
         
         try:
-            response = self.connection.query(OBD.commands["CLEAR_DTC"])
+            response = self.connection.query(OBDConnection.commands["CLEAR_DTC"])
             logger.info("DTC codes cleared")
             return response
         except Exception as e:
@@ -182,7 +182,7 @@ class OBDConnection:
             raise ConnectionError("Not connected to vehicle")
         
         try:
-            return self.connection.query(OBD.commands[command])
+            return self.connection.query(OBDConnection.commands[command])
         except KeyError:
             raise ValueError(f"Unknown OBD command: {command}")
         except Exception as e:

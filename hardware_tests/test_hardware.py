@@ -20,7 +20,7 @@ from typing import Optional
 # Add parent directory to path to import obd2 module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from obd2.obd2 import OBD
+from obd2.obd2 import OBDConnection
 from obd2.utils.obd_status import OBDStatus
 from serial.tools import list_ports
 
@@ -85,7 +85,7 @@ def list_available_ports():
         print()
 
 
-def test_connection(port: Optional[str] = None) -> Optional[OBD]:
+def test_connection(port: Optional[str] = None) -> Optional[OBDConnection]:
     """Test 1: Establish connection to ELM327"""
     print_header("Test 1: Connection")
     
@@ -97,7 +97,7 @@ def test_connection(port: Optional[str] = None) -> Optional[OBD]:
         
         print("(This may take 10-15 seconds...)\n")
         
-        connection = OBD(portstr=port, fast=False)
+        connection = OBDConnection(portstr=port, fast=False)
         
         if connection.is_connected():
             print_test("Connection", "PASS", 
@@ -115,7 +115,7 @@ def test_connection(port: Optional[str] = None) -> Optional[OBD]:
         return None
 
 
-def test_adapter_info(connection: OBD):
+def test_adapter_info(connection: OBDConnection):
     """Test 2: Get adapter information"""
     print_header("Test 2: Adapter Information")
     
@@ -137,7 +137,7 @@ def test_adapter_info(connection: OBD):
         print_test("Status Check", "FAIL", str(e))
 
 
-def test_supported_commands(connection: OBD):
+def test_supported_commands(connection: OBDConnection):
     """Test 3: Check supported commands"""
     print_header("Test 3: Supported Commands")
     
@@ -172,7 +172,7 @@ def test_supported_commands(connection: OBD):
         print_test("Command Support Check", "FAIL", str(e))
 
 
-def test_basic_queries(connection: OBD):
+def test_basic_queries(connection: OBDConnection):
     """Test 4: Query basic sensor data"""
     print_header("Test 4: Basic Sensor Queries")
     
@@ -211,7 +211,7 @@ def test_basic_queries(connection: OBD):
     print(f"\n{Colors.BOLD}Summary:{Colors.END} {successful}/{len(queries)} queries successful")
 
 
-def test_dtc_reading(connection: OBD):
+def test_dtc_reading(connection: OBDConnection):
     """Test 5: Read Diagnostic Trouble Codes"""
     print_header("Test 5: Diagnostic Trouble Codes (DTCs)")
     
@@ -239,7 +239,7 @@ def test_dtc_reading(connection: OBD):
         print_test("DTC Reading", "FAIL", f"Exception: {str(e)}")
 
 
-def test_continuous_monitoring(connection: OBD, duration: int = 5):
+def test_continuous_monitoring(connection: OBDConnection, duration: int = 5):
     """Test 6: Continuous data monitoring"""
     print_header(f"Test 6: Continuous Monitoring ({duration}s)")
     

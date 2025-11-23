@@ -34,12 +34,12 @@ import time
 import threading
 import logging
 from obd2.response import OBDResponse
-from obd2.obd2 import OBD
+from obd2.obd2 import OBDConnection
 
 logger = logging.getLogger(__name__)
 
 
-class Async(OBD):
+class Async(OBDConnection):
     """
         Class representing an OBD-II connection with it's assorted commands/sensors
         Specialized for asynchronous value reporting.
