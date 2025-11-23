@@ -11,7 +11,7 @@ Handles connection initialization, retry logic, and basic OBD operations.
 import time
 import logging
 from typing import Optional, Tuple, Callable, Any
-from obd2.obd2 import OBDConnection
+from obd2.obd_connection import OBDConnection
 
 logger = logging.getLogger(__name__)
 

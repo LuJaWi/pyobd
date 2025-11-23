@@ -6,7 +6,7 @@ Tests connection initialization, querying, and status management with mocks.
 
 import pytest
 from unittest.mock import patch
-from obd2.obd2 import OBDConnection
+from obd2.obd_connection import OBDConnection
 from obd2.utils.obd_status import OBDStatus
 
 

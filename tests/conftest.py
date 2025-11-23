@@ -248,7 +248,7 @@ def codebase(request):
     
     else:  # 'new'
         # Import new modules
-        from obd2.obd2 import OBDConnection as NewOBD
+        from obd2.obd_connection import OBDConnection as NewOBD
         from obd2.asynchronous import Async as NewAsync
         from obd2.command_functions import Commands
         from decoding import decoders as new_decoders

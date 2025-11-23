@@ -20,7 +20,7 @@ from typing import Optional
 # Add parent directory to path to import obd2 module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from obd2.obd2 import OBDConnection
+from obd2.obd_connection import OBDConnection
 from obd2.utils.obd_status import OBDStatus
 from serial.tools import list_ports
 

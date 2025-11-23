@@ -70,7 +70,7 @@ pytest -m utils        # Run utility tests only
 
 ```python
 import pytest
-from obd2.obd2 import OBD
+from obd2.obd_connection import OBDConnection
 
 @pytest.mark.connection
 def test_my_feature(mock_serial):

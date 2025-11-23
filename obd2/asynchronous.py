@@ -34,7 +34,7 @@ import time
 import threading
 import logging
 from obd2.response import OBDResponse
-from obd2.obd2 import OBDConnection
+from obd2.obd_connection import OBDConnection
 
 logger = logging.getLogger(__name__)
 
