@@ -1,5 +1,5 @@
 
-from config.available_tests import BASE_TESTS, SPARK_TESTS, COMPRESSION_TESTS, TEST_IDS
+from decoding.codes import BASE_TESTS, SPARK_TESTS, COMPRESSION_TESTS, TEST_IDS
 
 import logging
 
