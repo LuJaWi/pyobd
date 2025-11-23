@@ -1,12 +1,12 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class Frame:
     """ Represents a single OBD-II frame/message line. """
 
     raw: str
-    data: bytearray = bytearray()
+    data: bytearray = field(default_factory=bytearray)
     priority: int = None
     addr_mode: int = None
     rx_id: int = None
