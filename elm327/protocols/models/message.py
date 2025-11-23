@@ -1,6 +1,6 @@
 
 from binascii import hexlify
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ecu.ecu import ECU
 
@@ -13,7 +13,7 @@ class Message(object):
     frames: list[Frame]
     ecu = ECU.UNKNOWN
     num_frames: int = 0
-    data: bytearray = bytearray()
+    data: bytearray = field(default_factory=bytearray)
     can: bool = False
 
     @property
