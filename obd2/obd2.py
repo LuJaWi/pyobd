@@ -1,15 +1,18 @@
 from obd2.response import OBDResponse
+from obd2.command import OBDCommand
 from obd2.command_functions import Commands
 from elm327.elm327 import ELM327
 from ecu.ecu_header import ECU_HEADERS
 from obd2.utils.obd_status import OBDStatus
 from serial_utils.scan_serial import *
+from general_utils.version import get_version
 
 import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-version = None # TODO: Implement method to retrieve version info
+version = get_version()
 
 class OBD(object):
     commands = Commands()
@@ -18,15 +21,22 @@ class OBD(object):
         with its assorted commands/sensors.
     """
 
-    def __init__(self, portstr=None, baudrate=None, protocol=None, fast=True,
-                 timeout=0.1, check_voltage=True, start_low_power=False):
+    def __init__(self, 
+                 portstr: str, 
+                 baudrate: int = None, 
+                 protocol = None, 
+                 fast = True,
+                 timeout = 0.1, 
+                 check_voltage = True, 
+                 start_low_power = False
+                 ) -> None:
         self.interface = None
         self.supported_commands = set(OBD.commands.base_commands())
         self.fast = fast  # global switch for disabling optimizations
-        self.timeout = timeout
-        self.__last_command = b""  # used for running the previous command with a CR
+        self.timeout: float = timeout
+        self.__last_command: bytes = b""  # used for running the previous command with a CR
         self.__last_header = ECU_HEADERS.ENGINE  # for comparing with the previously used header
-        self.__frame_counts = {}  # keeps track of the number of return frames for each command
+        self.__frame_counts: dict = {}  # keeps track of the number of return frames for each command
 
         logger.info(f"======================= python-OBD {'(v' + version + ')' if version else ''} =======================")
         self.__connect(portstr, baudrate, protocol,
@@ -34,8 +44,13 @@ class OBD(object):
         self.__load_commands()  # try to load the car's supported commands
         logger.info("===================================================================")
 
-    def __connect(self, portstr, baudrate, protocol, check_voltage,
-                  start_low_power):
+    def __connect(self, 
+                  portstr: str, 
+                  baudrate: int, 
+                  protocol, 
+                  check_voltage: bool,
+                  start_low_power: bool
+                  ) -> None:
         """
             Attempts to instantiate an ELM327 connection object.
         """
@@ -233,7 +248,7 @@ class OBD(object):
 
         return True
 
-    def query(self, cmd, force=False):
+    def query(self, cmd: OBDCommand, force: bool=False) -> OBDResponse:
         """
             primary API function. Sends commands to the car, and
             protects against sending unsupported commands.
