@@ -101,157 +101,87 @@ class ELM327:
     # going to be less picky about the time required to detect it.
     _TRY_BAUDS = [38400, 9600,  115200, 57600, 19200, 14400, 3000000, 2000000, 1000000, 250000, 230400, 128000, 500000, 460800, 500000, 576000, 921600, 1000000, 1152000, 1500000, 2000000, 2500000, 3000000, 3500000, 4000000]
 
-    def __init__(self, portname, baudrate, protocol, timeout,
-                 check_voltage=False, start_low_power=False):
+    def __init__(self, 
+                 portname: str, 
+                 baudrate: int, 
+                 protocol: str, 
+                 timeout: float,
+                 check_voltage: bool = False, 
+                 start_low_power: bool = False
+                 ) -> None:
         """Initializes port by resetting device and gettings supported PIDs. """
-
-        logger.info("Initializing ELM327: PORT=%s BAUD=%s PROTOCOL=%s" %
-                    (
-                        portname,
-                        "auto" if baudrate is None else baudrate,
-                        "auto" if protocol is None else protocol,
-                    ))
-        print("Initializing ELM327: PORT=%s BAUD=%s PROTOCOL=%s" %
-                    (
-                        portname,
-                        "auto" if baudrate is None else baudrate,
-                        "auto" if protocol is None else protocol,
-                    ))
+        log_msg = f"Initializing ELM327: PORT={portname} BAUD={baudrate} PROTOCOL={protocol}"
+        logger.info(log_msg)
+        print(log_msg)
         self.__status = OBDStatus.NOT_CONNECTED
-        self.__port = None
         self.__protocol = UnknownProtocol([])
         self.__low_power = False
         self.timeout = timeout
 
+        self.__port: serial.Serial = self.__open_serial_port(portname, timeout=timeout)
 
-        # ------------- open port -------------
-        try:
-            self.__port = serial.serial_for_url(portname,
-                                                parity=serial.PARITY_NONE,
-                                                stopbits=1,
-                                                bytesize=8,
-                                                timeout=10)  # seconds
-            print('Port '+portname+' created')
-            self.__port.write_timeout = timeout
-        except serial.SerialException as e:
-            self.__error(e)
-            print(e)
-            return
-        except OSError as e:
-            self.__error(e)
-            print(e)
-            return
+        if start_low_power: # Wake from low power
+            self.__wake_from_low_power()
 
-        # If we start with the IC in the low power state we need to wake it up
-        if start_low_power:
-            self.__write(b" ")
-            time.sleep(1)
-            print('Start low power')
-
-        # ------------------------ find the ELM's baud ------------------------
-
-        if not self.set_baudrate(baudrate):
+        if not self.set_baudrate(baudrate): # Find and set baudrate
             self.__error("Failed to set baudrate")
             return
         else:
-            print('Baudrate set!')
-        # ---------------------------- ATZ (reset) ----------------------------
+            print(f"Baudrate set to {baudrate}")
 
-        try:
-            r =self.__send(b"ATZ", delay=1)  # wait 1 second for ELM to initialize
-            if "elm" in str(r).lower():
-                print(str(r))
-                print('ATZ succesful')
-            else:
-                print('ELM not found on this port.')
-                return
-            # return data can be junk, so don't bother checking
-        except serial.SerialException as e:
-            self.__error(e)
-            print(e)
+        if not self.__reset_device(): # ATZ (reset)
             return
 
-        # -------------------------- ATE0 (echo OFF) --------------------------
-        r = self.__send(b"ATE0", delay=1)
-        if not self.__isok(r, expectEcho=True):
-            self.__error("ATE0 did not return 'OK'")
+        if not self.__disable_echo(): # ATE0 (echo OFF)
             return
-        else:
-            print('ATE0 OK')
 
-        # ------------------------- ATH1 (headers ON) -------------------------
-        r = self.__send(b"ATH1", delay=1)
-        if not self.__isok(r):
-            self.__error("ATH1 did not return 'OK', or echoing is still ON")
+        if not self.__enable_headers(): # ATH1 (headers ON)
             return
-        else:
-            print('ATH1 OK')
 
-        # ------------------------ ATL0 (linefeeds OFF) -----------------------
-        r = self.__send(b"ATL0")
-        if not self.__isok(r):
-            self.__error("ATL0 did not return 'OK'")
+        if not self.__disable_linefeeds(): # ATL0 (linefeeds OFF)
             return
-        else:
-            print('ATL0 OK')
 
         # by now, we've successfuly communicated with the ELM, but not the car
+        # Update status
         self.__status = OBDStatus.ELM_CONNECTED
         print('Connected to the ELM327')
         # -------------------------- AT RV (read volt) ------------------------
         if check_voltage:
-            r = self.__send(b"AT RV")
-            if not r or len(r) != 1 or r[0] == '':
-                self.__error("No answer from 'AT RV'")
-                print("No answer from 'AT RV'")
-                return
-            try:
-                if float(r[0].lower().replace('v', '')) < 6:
-                    logger.error("OBD2 socket disconnected")
-                    print("OBD2 socket disconnected")
-                    return
-            except ValueError as e:
-                self.__error("Incorrect response from 'AT RV'")
-                print("Incorrect response from 'AT RV'")
+            if not self.__is_vehicle_voltage_correct():
                 return
             # by now, we've successfuly connected to the OBD socket
             self.__status = OBDStatus.OBD_CONNECTED
             print('OBD Connected')
+        
         # try to communicate with the car, and load the correct protocol parser
-        if self.set_protocol(protocol):
-            self.__status = OBDStatus.CAR_CONNECTED
-            logger.info("Connected Successfully: PORT=%s BAUD=%s PROTOCOL=%s" %
-                        (
-                            portname,
-                            self.__port.baudrate,
-                            self.__protocol.ELM_ID,
-                        ))
-            print("Connected Successfully: PORT=%s BAUD=%s PROTOCOL=%s" %
-                        (
-                            portname,
-                            self.__port.baudrate,
-                            self.__protocol.ELM_ID,
-                        ))
+        if not self.set_protocol(protocol):
+            err_msg = "Failed to set protocol during initialization. "
+            err_msg += "Adapter is connected, but failed to connect to the vehicle, ignition may be off."
+            logger.error(err_msg)
+            print(err_msg)
+            return
         else:
-            if self.__status == OBDStatus.OBD_CONNECTED:
-                logger.error("Adapter connected, but the ignition is off")
-                print("Adapter connected, but the ignition is off")
-            else:
-                logger.error("Connected to the adapter, "
-                             "but failed to connect to the vehicle")
-                print("Connected to the adapter, "
-                             "but failed to connect to the vehicle")
+            self.__status = OBDStatus.CAR_CONNECTED
+            log_msg = f"Connected Successfully: PORT={portname} BAUD={self.__port.baudrate} PROTOCOL={self.__protocol.ELM_ID}"
+            logger.info(log_msg)
+            print(log_msg)
 
-    def set_protocol(self, protocol_):
+        if self.__status == OBDStatus.OBD_CONNECTED:
+            logger.error("Adapter connected, but the ignition is off")
+            print("Adapter connected, but the ignition is off")
+        else:
+            logger.error("Connected to the adapter, "
+                            "but failed to connect to the vehicle")
+            print("Connected to the adapter, "
+                            "but failed to connect to the vehicle")
+
+    def set_protocol(self, protocol_) -> bool:
         if protocol_ is not None:
             # an explicit protocol was specified
             if protocol_ not in self._SUPPORTED_PROTOCOLS:
-                logger.error(
-                    "{:} is not a valid protocol. ".format(protocol_) +
-                    "Please use \"1\" through \"A\"")
-                print(
-                    "{:} is not a valid protocol. ".format(protocol_) +
-                    "Please use \"1\" through \"A\"")
+                err_msg = f"{protocol_} is not a valid protocol. Please use \"1\" through \"A\""
+                logger.error(err_msg)
+                print(err_msg)
                 return False
             return self.manual_protocol(protocol_)
         else:
@@ -330,95 +260,121 @@ class ELM327:
         print("Failed to determine protocol")
         return False
 
-    def set_baudrate(self, baud):
-        if baud is None:
+    def set_baudrate(self, baud_rate: int = None, psuedo_baud_rate: int = 38400) -> int | None:
+        """
+        Set the baud rate of the ELM327 interface.
+
+        If baud is None, attempts to auto-detect the baud rate.
+
+        Returns the set baud rate on success, or None on failure.
+        
+        """
+
+        if baud_rate is None:
             # when connecting to pseudo terminal, don't bother with auto baud
             if self.port_name().startswith("/dev/pts"):
                 logger.debug("Detected pseudo terminal, skipping baudrate setup")
                 print("Detected pseudo terminal, skipping baudrate setup")
-                self.__port.baudrate = 38400
-                return True
+                self.__port.baudrate = psuedo_baud_rate
+                return psuedo_baud_rate
             else:
-                return self.auto_baudrate()
+                return self.auto_detect_baudrate()
         else:
             try:
-                self.__port.baudrate = baud
-                print("Baud rate set!")
-            except serial.serialutil.SerialException:
+                self.__port.baudrate = baud_rate
+                print(f"Baud rate set to {baud_rate}")
+                return baud_rate
+            except serial.SerialException:
                 print("Baud rate not supported!")
-                return False
-            return True
+                return None
 
-    def auto_baudrate(self):
+    def auto_detect_baudrate(self) -> int | None:
         """
         Detect the baud rate at which a connected ELM32x interface is operating.
-        Returns boolean for success.
+        
+        Returns the detected baud rate on success, or None on failure.
         """
-
-        # before we change the timout, save the "normal" value
-        timeout = self.__port.timeout
-        self.__port.timeout = 0.1  # we're only talking with the ELM, so things should go quickly
-        #print(self.__port.write_timeout)
-        self.__port.write_timeout = 0.1
-        #print(self.__port.write_timeout)
-        for baud in self._TRY_BAUDS:
-            print('Baudrate ' + str(baud))
-            try:
-                self.__port.baudrate = baud
-            except serial.serialutil.SerialException:
-                print('This baudrate is not supported on this platform!')
-                continue
-
-            print("Trying baudrate "+str(baud))
-            print('flushing input')
-            self.__port.flushInput()
-            print('flushing output')
-            self.__port.flushOutput()
-
-            # Send a nonsense command to get a prompt back from the scanner
-            # (an empty command runs the risk of repeating a dangerous command)
-            # The first character might get eaten if the interface was busy,
-            # so write a second one (again so that the lone CR doesn't repeat
-            # the previous command)
-
-            # All commands should be terminated with carriage return according
-            # to ELM327 and STN11XX specifications
-            
-            print('writing \x7F\x7F\r')
-            try:
-                self.__port.write(b"\x7F\x7F\r")
-            except serial.serialutil.SerialTimeoutException:
-                print('Timeout')
-            """
-            print('writing ATZ')
-            try:
-                self.__port.write(b"ATZ\r")
-            except serial.serialutil.SerialTimeoutException:
-                print('Timeout')
-            """
-            print('flushing')
-            self.__port.flush()
-            print('reading')
-            response = self.__port.read(1024)
-            logger.debug("Response from baud %d: %s" % (baud, repr(response)))
-            print("Response from baud %d: %s" % (baud, repr(response)))
-            # watch for the prompt character
-            #if (response.endswith(b">")) or ("elm" in str(response).lower()) or (b'\x7f\x7f\r' in response):
-            if "elm" in str(response).lower() or ((b'\x7f\x7f\r' in response) and (response.endswith(b">"))):
-                logger.debug("Choosing baud %d" % baud)
-                print("Choosing baud %d" % baud)
-                self.__port.timeout = timeout  # reinstate our original timeout
-                self.__port.write_timeout = timeout
-                return True
-
-        logger.debug("Failed to choose baud")
-        print("Failed to choose baud")
+        return detect_elm327_baudrate(self.__port)
+ 
+    def __reset_device(self) -> bool:
         try:
-            self.__port.timeout = timeout  # reinstate our original timeout
-            self.__port.write_timeout = timeout
-        except serial.serialutil.SerialException:
+            response = self.__send(b"ATZ", delay=1)  # wait 1 second for ELM to initialize
+            if "ELM" in str(response).upper():
+                print(str(response))
+                print("ATZ successful")
+                return True
+            else:
+                print('ELM not found on this port.')
+                return False
+            # return data can be junk, so don't bother checking
+        except serial.SerialException as e:
+            self.__error(e)
+            print(e)
             return False
-        return False
+
+    def __disable_linefeeds(self) -> bool:    
+        """ Disable linefeeds"""    
+        r = self.__send(b"ATL0")
+        if not self.__isok(r):
+            self.__error("ATL0 did not return 'OK'")
+            return False
+        else:
+            print('ATL0 OK')
+            return True
+        
+    def __disable_echo(self) -> bool:
+        response = self.__send(b"ATE0", delay=1)
+        if not self.__isok(response, expectEcho=True):
+            self.__error("ATE0 did not return 'OK'")
+            return False
+        else:
+            logger.debug("ATE0 OK")
+            return True
+
+    def __enable_headers(self) -> bool:
+        response = self.__send(b"ATH1", delay=1)
+        if not self.__isok(response):
+            self.__error("ATH1 did not return 'OK', or echoing is still ON")
+            return False
+        else:
+            logger.debug("ATH1 OK")
+            return True
+
+    def check_voltage(self) -> float | None:
+        """ 
+        Check the vehicle voltage
+        returns the voltage as a float on success, or None on failure
+        """
+        response = self.__send(b"AT RV")
+        if not response or len(response) != 1 or response[0] == '':
+            logger.error("No response from 'AT RV'")
+            return None
+        try:
+            response_volts = float(response[0].lower().replace('v', ''))
+            return response_volts
+        except ValueError as e:
+            self.__error(f"Incorrect response from 'AT RV' {response_volts}")
+            return None
+    
+    def __is_vehicle_voltage_correct(self, voltage: float) -> bool:
+        """ Check if the vehicle voltage is within acceptable range """
+        try:
+            voltage = float(self.check_voltage())
+        except (TypeError, ValueError):
+            voltage = None
+        if voltage is None:
+            logger.error("Failed to read vehicle voltage")
+            print("Failed to read vehicle voltage")
+            return False
+        elif voltage < 6.0:
+            logger.error("Vehicle voltage too low: %.2f V" % voltage)
+            print("Vehicle voltage too low: %.2f V" % voltage)
+            return False
+        elif voltage > 16.0:
+            logger.error("Vehicle voltage too high: %.2f V" % voltage)
+            print("Vehicle voltage too high: %.2f V" % voltage)
+            return False
+        return True
 
     def __isok(self, lines, expectEcho=False):
         if not lines:
@@ -622,6 +578,7 @@ class ELM327:
         else:
             logger.info("cannot perform __write() when unconnected")
             print("cannot perform __write() when unconnected")
+
     def __read(self, end_marker=ELM_PROMPT):
         """
             "low-level" read function
@@ -681,3 +638,149 @@ class ELM327:
         lines = [s.strip() for s in re.split("[\r\n]", string) if bool(s)]
 
         return lines
+    
+    def __open_serial_port(self, portname: str, timeout: float) -> serial.Serial:
+        """
+        Opens the serial port with the given port name.
+
+        timeout parameter is not used for opening the port, but is set
+        for read and write operations.
+        
+        Returns the opened serial port object, or None on failure.
+        """
+        
+        try:
+            port = serial.serial_for_url(url=portname,
+                                                parity=serial.PARITY_NONE,
+                                                stopbits=1,
+                                                bytesize=8,
+                                                timeout=10)  # Use a long timeout for opening the port, but use the set timeout for reads
+            print(f"Port {portname} created")
+            port.write_timeout = timeout
+            return port
+        except serial.SerialException as e:
+            self.__error(e)
+            print(e)
+            return None
+        except OSError as e:
+            self.__error(e)
+            print(e)
+            return None
+        
+    def __wake_from_low_power(self):
+        """
+        Wakes the ELM327 from Low Power mode
+
+        Send a space to trigger the RS232 to wakeup.
+        """
+        if self.__port:
+            self.__write(b" ")
+            time.sleep(1)
+            print("Start low power")
+        else:
+            log_msg = "Cannot wake from low power when unconnected"
+            logger.info(log_msg)
+            print(log_msg)
+
+
+def detect_elm327_baudrate(port: serial.Serial) -> int | None:
+    """
+    Detect the baud rate at which a connected ELM32x interface is operating.
+
+    Args:
+        port: An opened serial port object.
+    Returns:
+        The detected baud rate on success, or None on failure.
+    """
+
+    timeout = port.timeout
+    port.timeout = 0.1  # we're only talking with the ELM, so things should go quickly
+    port.write_timeout = 0.1
+
+    found_baud = False
+    for baud in ELM327._TRY_BAUDS:
+        print(f"Trying baudrate {baud}...")
+        if _test_baudrate(port, baud):
+            found_baud = True
+            break
+
+    if not found_baud:
+        log_msg = "Failed to find baud rate"
+        logger.debug(log_msg)
+        print(log_msg)
+    else:
+        log_msg = f"Detected baud rate: {baud}"
+        logger.debug(log_msg)
+        print(log_msg)
+
+    log_msg = "Reinstating original timeout"
+    logger.debug(log_msg)
+    print(log_msg)
+    try:
+        port.timeout = timeout  # reinstate our original timeout
+        port.write_timeout = timeout
+    except serial.SerialException:
+        log_msg = "Failed to reinstate original timeout"
+        logger.debug(log_msg)
+        print(log_msg)
+        return None
+    if found_baud:
+        return baud
+    else:
+        log_msg = "Failed to find baud"
+        logger.debug(log_msg)
+        print(log_msg)
+        return None
+
+def _test_baudrate(port: serial.Serial, baud_rate: int) -> bool:
+    """
+    Test if the given baud rate is supported by the ELM327 interface.
+
+    Args:
+        port: An opened serial port object.
+        baud_rate: The baud rate to test.
+    Returns:
+        True if the baud rate is supported, False otherwise.
+    """
+
+    try:
+        port.baudrate = baud_rate
+    except serial.SerialException:
+        log_msg = f"Baudrate {baud_rate} not supported by serial port."
+        logger.debug(log_msg)
+        print(log_msg)
+        return False
+
+    port.flush()
+
+    try:
+        port.write(b"\x7F\x7F\r")
+    except serial.SerialTimeoutException:
+        log_msg = "Port write timeout"
+        logger.debug(log_msg)
+        print(log_msg)
+        return False
+
+    port.flush()
+    try:
+        response = port.read(1024)
+    except serial.SerialTimeoutException:
+        log_msg = "Port read timeout"
+        logger.debug(log_msg)
+        print(log_msg)
+        return False
+
+    log_msg = f"Response from baud {baud_rate}: {repr(response)}"
+    logger.debug(log_msg)
+    print(log_msg)
+
+    if "ELM" in str(response).upper() or ((b'\x7f\x7f\r' in response) and (response.endswith(b">"))):
+        log_msg = f"Baudrate {baud_rate} returned valid response"
+        logger.debug(log_msg)
+        print(log_msg)
+        return True
+    else:
+        log_msg = f"Baudrate {baud_rate} did not return valid response"
+        logger.debug(log_msg)
+        print(log_msg)
+        return False
