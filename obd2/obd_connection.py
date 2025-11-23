@@ -1,6 +1,6 @@
 from obd2.response import OBDResponse
 from obd2.command import OBDCommand
-from obd2.command_functions import Commands
+from obd2.command_functions import commands as commands_singleton
 from elm327.elm327 import ELM327
 from ecu.ecu_header import ECU_HEADERS
 from obd2.utils.obd_status import OBDStatus
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 version = get_version()
 
 class OBDConnection(object):
-    commands = Commands()
+    commands = commands_singleton
     """
         Class representing an OBD-II connection
         with its assorted commands/sensors.
@@ -30,6 +30,7 @@ class OBDConnection(object):
                  check_voltage = True, 
                  start_low_power = False
                  ) -> None:
+        
         self.__interface: ELM327 = None
         self.__supported_commands = set(OBDConnection.commands.base_commands())
         self.__fast = fast  # global switch for disabling optimizations
@@ -164,6 +165,11 @@ class OBDConnection(object):
         """Get a copy of supported commands (read-only)."""
         return frozenset(self.__supported_commands)
     
+    @property
+    def supported_command_names(self):
+        """Get a list of supported command names (read-only)."""
+        return [cmd.name for cmd in self.__supported_commands]
+
     @property
     def fast(self):
         """Get the fast mode setting."""
