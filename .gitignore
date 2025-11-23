@@ -1,4 +1,8 @@
 .venv/*
+.github/*
 build/*
 dist/*
 __pycache__
+
+# Pre-fork codebase
+legacy/*

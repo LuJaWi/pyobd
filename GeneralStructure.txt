@@ -1,0 +1,36 @@
+obd/
+├── __init__.py              # Public API exports
+├── __version__.py           # Version info
+│
+├── core/
+│   ├── __init__.py
+│   ├── connection.py        # OBD + Async classes (from obd.py + asynchronous.py)
+│   ├── command.py           # OBDCommand class (from OBDCommand.py)
+│   └── response.py          # OBDResponse class ONLY (from OBDResponse.py)
+│
+├── hardware/
+│   ├── __init__.py
+│   ├── elm327.py            # ELM327 adapter interface (stays as-is)
+│   └── protocols/           # Protocol implementations (stays as-is)
+│       ├── __init__.py
+│       ├── protocol.py
+│       ├── protocol_can.py
+│       ├── protocol_legacy.py
+│       └── protocol_unknown.py
+│
+├── commands/
+│   ├── __init__.py
+│   └── definitions.py       # All command definitions (from commands.py)
+│
+├── decoding/
+│   ├── __init__.py
+│   ├── decoders.py          # Basic decoders (temp, pressure, etc.)
+│   ├── diagnostic_types.py  # Status, StatusTest, Monitor, MonitorTest
+│   └── dtc.py               # DTC parsing functions
+│
+├── data/
+│   ├── __init__.py
+│   ├── codes.py            # DTC lookup tables (from codes.py)
+│   └── units.py            # Units and scaling (from UnitsAndScaling.py)
+│
+└── utils.py                # Helper functions (stays mostly as-is)
