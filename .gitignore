@@ -6,3 +6,6 @@ __pycache__
 
 # Pre-fork codebase
 legacy/*
+
+# pytest
+.coverage
