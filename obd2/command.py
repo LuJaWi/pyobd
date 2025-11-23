@@ -118,7 +118,9 @@ class OBDCommand:
 
     def __hash__(self):
         # needed for using commands as keys in a dict (see async.py)
-        return hash(self.header + self.command)
+        # Convert header enum to its value for hashing
+        header_val = self.header.value if hasattr(self.header, 'value') else self.header
+        return hash((header_val, self.command))
 
     def __eq__(self, other):
         if isinstance(other, OBDCommand):
