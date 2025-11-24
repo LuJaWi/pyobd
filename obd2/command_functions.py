@@ -278,6 +278,41 @@ Assemble the command tables by mode, and allow access by name
 """
 
 
+class _CommandRegistry:
+    """Internal registry for organizing commands by mode and name."""
+    
+    def __init__(self, modes_list, misc_list):
+        self.modes = modes_list
+        self._commands = {}
+        
+        # Build name -> command mapping
+        for mode in self.modes:
+            for cmd in mode:
+                if cmd is not None:
+                    self._commands[cmd.name] = cmd
+        
+        for cmd in misc_list:
+            self._commands[cmd.name] = cmd
+    
+    def get(self, name):
+        """Get command by name."""
+        return self._commands.get(name)
+    
+    def get_by_mode_pid(self, mode, pid):
+        """Get command by mode and PID."""
+        if mode < 0 or pid < 0:
+            return None
+        if mode >= len(self.modes):
+            return None
+        if pid >= len(self.modes[mode]):
+            return None
+        return self.modes[mode][pid]
+    
+    def all_commands(self):
+        """Get all commands."""
+        return list(self._commands.values())
+
+
 class Commands():
     # Explicit attribute declarations for IDE autocomplete and type checking
     # Mode 1 - Current Data
@@ -613,6 +648,9 @@ class Commands():
 
         for c in __misc__:
             self.__dict__[c.name] = c
+        
+        # Internal registry for shared access
+        self._registry = _CommandRegistry(self.modes, __misc__)
 
     def __getitem__(self, key):
         """
@@ -688,5 +726,135 @@ class Commands():
         return self.modes[mode][pid] is not None
 
 
-# export this object
+class _CommandEnumMeta(type):
+    """Metaclass that makes Command class behave like an Enum."""
+    
+    def __new__(mcs, name, bases, namespace):
+        # Create the class first
+        cls = super().__new__(mcs, name, bases, namespace)
+        
+        # Initialize registry on first creation
+        if not hasattr(cls, '_initialized'):
+            cls._initialized = False
+        
+        return cls
+    
+    def __getattribute__(cls, name):
+        """Intercept attribute access to return OBDCommand objects."""
+        # Allow access to special attributes and methods
+        if name.startswith('_') or name in ('get', 'get_by_mode_pid', 'all', 'modes'):
+            return super().__getattribute__(name)
+        
+        # Check if this is a command name
+        registry = super().__getattribute__('_registry')
+        if registry:
+            cmd = registry.get(name)
+            if cmd is not None:
+                return cmd
+        
+        # Fall back to normal attribute access
+        return super().__getattribute__(name)
+    
+    def __dir__(cls):
+        """Include all command names in dir() output."""
+        registry = cls._registry
+        if registry:
+            return list(registry._commands.keys()) + ['get', 'get_by_mode_pid', 'all', 'modes']
+        return []
+    
+    def __contains__(cls, item):
+        """Check if a command name or OBDCommand exists."""
+        registry = cls._registry
+        if registry:
+            if isinstance(item, str):
+                return item in registry._commands
+            elif isinstance(item, OBDCommand):
+                return item in registry._commands.values()
+        return False
+
+
+class Command(metaclass=_CommandEnumMeta):
+    """
+    Enum-style class for accessing OBD commands.
+    
+    Usage:
+        Command.RPM          # Get RPM command
+        Command.SPEED        # Get speed command
+        Command.COOLANT_TEMP # Get coolant temperature command
+        
+    You can also use the utility methods:
+        Command.get('RPM')              # Get by name
+        Command.get_by_mode_pid(1, 12)  # Get by mode and PID
+        Command.all()                    # Get all commands
+    """
+    
+    _registry = None
+    _initialized = False
+    
+    @classmethod
+    def _init_registry(cls, registry):
+        """Initialize the command registry. Called by module initialization."""
+        cls._registry = registry
+        cls._initialized = True
+    
+    @classmethod
+    def get(cls, name):
+        """
+        Get a command by name.
+        
+        Args:
+            name: Command name (e.g., 'RPM', 'SPEED')
+            
+        Returns:
+            OBDCommand or None if not found
+        """
+        if cls._registry:
+            return cls._registry.get(name)
+        return None
+    
+    @classmethod
+    def get_by_mode_pid(cls, mode, pid):
+        """
+        Get a command by mode and PID.
+        
+        Args:
+            mode: OBD mode (1-9)
+            pid: PID value (0x00-0xFF)
+            
+        Returns:
+            OBDCommand or None if not found
+        """
+        if cls._registry:
+            return cls._registry.get_by_mode_pid(mode, pid)
+        return None
+    
+    @classmethod
+    def all(cls):
+        """
+        Get all available commands.
+        
+        Returns:
+            List of all OBDCommand objects
+        """
+        if cls._registry:
+            return cls._registry.all_commands()
+        return []
+    
+    @classmethod
+    def modes(cls):
+        """
+        Get commands organized by mode.
+        
+        Returns:
+            List of mode lists
+        """
+        if cls._registry:
+            return cls._registry.modes
+        return []
+
+
+# Export the traditional commands object (backward compatibility)
 commands = Commands()
+
+# Initialize the new Command enum-style class
+Command._init_registry(commands._registry)
