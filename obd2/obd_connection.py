@@ -17,8 +17,8 @@ version = get_version()
 class OBDConnection(object):
     commands = commands_singleton
     """
-        Class representing an OBD-II connection
-        with its assorted commands/sensors.
+    Class representing an OBD-II connection
+    with its assorted commands/sensors.
     """
 
     def __init__(self, 
@@ -309,13 +309,10 @@ class OBDConnection(object):
 
         self.__set_header(cmd.header)
 
-        logger.info("Sending command: %s" % str(cmd))
+        logger.info(f"Sending command: {str(cmd)}")
         cmd_string = self.__build_command_string(cmd)
         messages = self.__interface.send_and_parse(cmd_string)
 
-        # if we're sending a new command, note it
-        # first check that the current command WASN'T sent as an empty CR
-        # (CR is added by the ELM327 class)
         if cmd_string:
             self.__last_command = cmd_string
 

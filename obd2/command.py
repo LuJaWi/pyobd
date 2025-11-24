@@ -57,7 +57,12 @@ class OBDCommand:
             return None
 
     def __call__(self, messages):
-
+        """
+        Process messages and create an OBDResponse.
+        
+        The OBDResponse will automatically decode the messages using this
+        command's decoder function.
+        """
         # filter for applicable messages (from the right ECU(s))
         messages = [m for m in messages if (self.ecu.value & m.ecu.value) > 0]
 
@@ -65,15 +70,11 @@ class OBDCommand:
         for m in messages:
             self.__constrain_message_data(m)
 
-        # create the response object with the raw data received
-        # and reference to original command
-        r = OBDResponse(self, messages)
-        if messages:
-            r.value = self.decode(messages)
-        else:
+        # create the response object - it will decode automatically
+        if not messages:
             logger.info(str(self) + " did not receive any acceptable messages")
-
-        return r
+        
+        return OBDResponse(self, messages)
 
     def __constrain_message_data(self, message):
         """ pads or chops the data field to the size specified by this command """
